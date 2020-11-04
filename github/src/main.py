@@ -12,7 +12,7 @@ x, y = np.meshgrid(x, y)
 z = np.empty((100,100), float)
 for xi in range(100):
     for yi in range(100):
-        command = './simrecog 18317 {} {}'.format(float(xi), float(yi))
+        command = './simrecog 18331 {} {}'.format(float(xi), float(yi))
         result = sub.run(command, shell = True, stdout = sub.PIPE, check = True).stdout
         result = result.decode('utf-8').split(" ")
         result = float(result[-1])
