@@ -1,0 +1,155 @@
+; 電子情報工学科2年実験
+; マイコン (2) LCD制御
+		.CPU 300HA
+PBDDR	.EQU	H'EE00A
+P4DDR	.EQU	H'EE003
+PBDR	.EQU	H'FFFDA ;micomboard VPE <-> LCD board VP3, データ
+P4DR	.EQU	H'FFFD3 ;micomboard VPD <-> LCD board VP2, 制御信号
+;P40 RS=0:制御信号, RS=1:データ
+;P41 ENABLE=1:送信有効
+;P42 R/W=0:書き込み，R/W=1:読み出し
+		.SECTION PROG,CODE,LOCATE=H'000000
+		.DATA.L	RESET
+		.SECTION P,CODE,LOCATE=H'000100
+RESET:	MOV.L	#H'FFF00,ER7 ;スタックポインタ設定
+		MOV.B	#H'FF,R0L
+		MOV.B	R0L,@P4DDR ;ポート4を出力に設定
+		MOV.B	R0L,@PBDDR ;ポートBを出力に設定
+		MOV.B	#H'00,R0H ;制御信号の初期値
+;LCDソフトウェアリセット
+		JSR	@TIME50M ;50ms待機（45ms以上）
+		MOV.B	#B'00110000,R0L	;instruction, DL = 1
+		AND.B	#B'11111010,R0H ;RS =  0, R/W = 0
+		JSR @LCD_OUT8
+		JSR		@TIME5M ;5ms待機（4.1ms以上）
+		MOV.B	#B'00110000,R0L	;instructoin, DL = 1
+		AND.B	#B'11111010,R0H ;RS =  0, R/W = 0
+		JSR @LCD_OUT8
+		JSR		@TIME5M ;5ms待機（100us以上）
+		MOV.B	#B'00110000,R0L	;inctruction, DL = 1
+		AND.B	#B'11111010,R0H ;RS =  0, R/W = 0
+		JSR @LCD_OUT8
+		JSR		@TIME5M ;5ms待機
+;LCD初期設定
+		MOV.B	#B'00111000,R0L	;instruction, DL = 1, N = 1, F = 0
+		AND.B	#B'11111010,R0H ;RS = 0, R/W = 0
+		JSR 	@LCD_OUT8
+		JSR		@TIME5M ;5ms待機
+		MOV.B	#B'00001110,R0L	;instruction, D = 1, C = 1, B = 0
+		AND.B	#B'11111010,R0H ;RS = 0, R/W = 0
+		JSR	 	@LCD_OUT8
+		JSR		@TIME5M ;5ms待機
+		MOV.B	#B'00000001,R0L	;instruction, クリア
+		AND.B	#B'11111010,R0H ;RS = 0, R/W = 0
+		JSR 	@LCD_OUT8
+		JSR		@TIME5M ;5ms待機
+		MOV.B	#B'00000110,R0L	;instruction I/D=1, S=0 
+		AND.B	#B'11111010,R0H ;RS = 0, R/W = 0
+		JSR 	@LCD_OUT8
+		JSR		@TIME5M ;5ms待機
+;自作パターン転送
+		JSR		@MVMYCHAR 
+;LCD表示データ転送
+		JSR		@LCDDISP
+;メインルーチン
+LOOP:	JMP @LOOP ;無限ループ
+;LCD32文字転送サブルーチン
+LCDDISP:	PUSH.L	ER0 ;レジスタ退避
+		PUSH.L	ER1
+		PUSH.L	ER2
+;1行目の転送
+		MOV.B	#B'00000001,R0L ;表示クリア, DDRAM=H'00
+		AND.B	#B'11111010,R0H ;RS = 0, R/W = 0
+		JSR		@LCD_OUT8
+		JSR		@TIME5M ;5ms待機、LCDのクリア動作の実行は1.53ms
+		MOV.B	#D'16,R2L ;1行の転送文字数
+		MOV.L	#MOJI,ER1 ;転送する文字の先頭アドレス
+LCDDSP1:	MOV.B	@ER1,R0L ;1行目の文字データ -> R0L
+		OR.B	#B'00000001,R0H ;RS = 1, R/W=0 のまま
+		JSR		@LCD_OUT8 ;LCDへ転送
+		AND.B	#B'11111010,R0H ;RS =  0, R/W=0
+		INC.L	#1,ER1 ;次の文字のアドレス
+		DEC.B	R2L ;残り転送文字数
+		BNE		LCDDSP1 ;残り文字がある場合
+;2行目の転送
+		MOV.B	#B'11000000,R0L ;DDRMA = H'40, 2行目のDDRAMアドレスの上位4ビットは4
+		AND.B	#B'11111010,R0H ;RS = 0, R/W = 0
+		JSR		@LCD_OUT8
+		MOV.B	#16,R2L ;転送文字数
+		MOV.L	#MOJI+16,ER1 ;17文字目の先頭アドレス，+16に注意
+LCDDSP2:	MOV.B	@ER1,R0L ;2行目の文字データ -> R0L
+		OR.B	#B'00000001,R0H ;RS = 1, R/W=0 のまま
+		JSR		@LCD_OUT8
+		AND.B	#B'11111010,R0H ;RS = 0, R/W = 0
+		INC.L	#1,ER1 ;次の文字のアドレス
+		DEC.B	R2L ;残り転送文字数
+		BNE		LCDDSP2 ;残り文字がある場合
+		POP.L	ER2 ;レジスタ回復
+		POP.L	ER1
+		POP.L	ER0
+		RTS
+;タイマーサブルーチン
+TIME50M:	PUSH.L	ER6 ;50msタイマー
+		MOV.L 	#D'156250,ER6
+TIME50M0:	DEC.L	#1,ER6
+		NOP
+		BNE 	TIME50M0
+		POP.L	ER6
+		RTS
+TIME5M:	PUSH.L	ER6 ;5msタイマー
+		MOV.L 	#D'15625,ER6
+TIME5M0:	DEC.L	#1,ER6
+		NOP
+		BNE 	TIME5M0
+		POP.L	ER6
+		RTS
+TIME80U: PUSH.L	ER6 ;80usタイマー
+		MOV.L 	#D'250,ER6
+TIME80U0:	DEC.L	#1,ER6
+		NOP
+		BNE		TIME80U0
+		POP.L	ER6
+		RTS
+;8ビット転送サブルーチン
+;レジスタ R0L のデータを LCD に転送
+;レジスタ R0H は制御信号
+LCD_OUT8:	MOV.B	R0H,@P4DR
+		OR.B	#B'00000010,R0H
+		MOV.B	R0H,@P4DR
+		MOV.B	R0L,@PBDR
+		JSR		@TIME50M
+		AND.B	#B'11111101,R0H
+		MOV.B	R0H,@P4DR
+		JSR		@TIME50M
+		RTS
+;自作キャラクタデータ転送サブルーチン
+MVMYCHAR:	PUSH.L	ER0 ;レジスタ退避
+		PUSH.L	ER1
+		PUSH.L	ER2
+		MOV.B	#D'8,R2L ;データ数 1キャラクタ8行分
+		MOV.L	#MYCHAR,ER1 ;自作キャラクタデータ先頭アドレス
+		MOV.B	#B'01000000,R0L ;CGRAMアドレス設定, 下位6ビットがCGRAMの先頭アドレス（指導書と異なっているので注意）
+		AND.B	#B'11111010,R0H ;RS = 0, R/W = 0
+		JSR		@LCD_OUT8
+MVMYCHAR0:	MOV.B	@ER1,R0L ;キャラクターデータ出力
+		OR.B	#B'00000001,R0H ;RS = 1, R/W = 0 のまま
+		JSR		@LCD_OUT8
+		AND.B	#B'11111010,R0H ;RS = 0, R/W = 0
+		INC.L	#1,ER1 ;次のデータへ
+		DEC.B	R2L ;残りデータ数
+		BNE		MVMYCHAR0 ;残りデータ有り
+		POP.L	ER2 ;レジスタ復帰
+		POP.L	ER1
+		POP.L	ER0
+		RTS
+;文字データ		
+		.ALIGN 2 ;データの境界をそろえる
+		.SECTION D,DATA,LOCATE=H'00B00
+;転送文字列 32文字
+MOJI:	.DATA.B H'49, H'20, H'4C, H'20, H'49, H'20, H'4B, H'20, H'45, H'20,
++		H'00, H'20, H'20, H'20, H'20, H'20, H'CE, H'DF, H'B9, H'20,
++		H'D3, H'20,	H'DD, H'20, H'21, H'21, H'00, H'20, H'20, H'20,
++		H'20, H'20
+;自作キャラクタデータ
+MYCHAR:	.DATA.B H'00, H'00, H'1D, H'05, H'1F, H'14, H'17, H'00
+		.END
